@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BusinessFocus: AI 數據流斷裂模擬</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        
+        /* UI Overlay - Minimalist Cyberpunk */
+        #ui-layer {
+            position: absolute;
+            top: 30px;
+            left: 30px;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            z-index: 10;
+        }
+
+        .card {
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid #333;
+            border-left: 4px solid #00ffff;
+            padding: 20px;
+            width: 280px;
+            backdrop-filter: blur(10px);
+            pointer-events: auto;
+            border-radius: 0 8px 8px 0;
+        }
+
+        h1 {
+            margin: 0 0 5px 0;
+            font-size: 14px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .value-display {
+            font-size: 32px;
+            font-weight: 700;
+            color: #00ffff;
+            text-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+            font-family: 'Courier New', monospace;
+        }
+
+        .status-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00ff00;
+            box-shadow: 0 0 8px #00ff00;
+            margin-right: 8px;
+        }
+
+        button {
+            background: transparent;
+            color: #ff3333;
+            border: 1px solid #ff3333;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.3s;
+            letter-spacing: 1px;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background: #ff3333;
+            color: #000;
+            box-shadow: 0 0 20px #ff3333;
+        }
+
+        button.restart {
+            color: #00ff00;
+            border-color: #00ff00;
+        }
+        
+        button.restart:hover {
+            background: #00ff00;
+            box-shadow: 0 0 20px #00ff00;
+        }
+
+        .tutorial {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #666;
+            font-size: 12px;
+            letter-spacing: 2px;
+            pointer-events: none;
+        }
+        
+        #status-text { color: #00ff00; }
+
+        /* Floating Labels Style */
+        .world-label {
+            position: absolute;
+            pointer-events: none;
+            text-align: center;
+            transform: translate(-50%, -50%);
+            transition: opacity 0.3s;
+        }
+
+        .label-content {
+            background: rgba(0, 20, 40, 0.8);
+            border: 1px solid #00ffff;
+            padding: 5px 10px;
+            border-radius: 4px;
+            display: inline-block;
+            position: relative;
+            backdrop-filter: blur(4px);
+        }
+
+        .label-title {
+            display: block;
+            font-size: 10px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 2px;
+        }
+
+        .label-text {
+            display: block;
+            font-size: 14px;
+            font-weight: bold;
+            color: #fff;
+            white-space: nowrap;
+        }
+
+        /* Line connecting label to object */
+        .label-line {
+            width: 1px;
+            height: 30px;
+            background: linear-gradient(to bottom, #00ffff 0%, transparent 100%);
+            margin: 0 auto;
+        }
+
+        /* Specific styles for offline state */
+        .offline-label .label-content {
+            border-color: #ff3333;
+            background: rgba(40, 0, 0, 0.8);
+        }
+        .offline-label .label-line {
+            background: linear-gradient(to bottom, #ff3333 0%, transparent 100%);
+        }
+        .offline-label .label-text {
+            color: #ff3333;
+        }
+
+    </style>
+    <!-- Import Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <div id="ui-layer">
+        <div class="card">
+            <h1>AI Agent Economy</h1>
+            <div class="value-display" id="revenue">$0</div>
+            <div class="status-row">
+                <div style="display:flex; align-items:center;">
+                    <div class="status-dot" id="status-dot"></div>
+                    <span id="status-text">SYSTEM ONLINE</span>
+                </div>
+                <span id="latency" style="color:#666">12ms</span>
+            </div>
+            <p style="color:#aaa; font-size:12px; margin: 10px 0 0 0; line-height:1.4;">
+                當 Cloudflare 斷線，<br>數據流無法到達 AI 核心，<br>經濟產值歸零。
+            </p>
+        </div>
+        
+        <div class="card" style="border-left-color: #ff3333; width: auto;">
+            <button id="toggle-btn" onclick="toggleSystem()">模擬拔線 (KILL SWITCH)</button>
+        </div>
+    </div>
+
+    <!-- Floating Labels Container -->
+    <div id="labels-container">
+        <div id="label-user" class="world-label">
+            <div class="label-content">
+                <span class="label-title">SOURCE</span>
+                <span class="label-text">用戶指令 (Users)</span>
+            </div>
+            <div class="label-line"></div>
+        </div>
+
+        <div id="label-cf" class="world-label">
+            <div class="label-content">
+                <span class="label-title">INFRASTRUCTURE</span>
+                <span class="label-text">Cloudflare (基建)</span>
+            </div>
+            <div class="label-line"></div>
+        </div>
+
+        <div id="label-ai" class="world-label">
+            <div class="label-content">
+                <span class="label-title">CORE</span>
+                <span class="label-text">AI 模型 (Agents)</span>
+            </div>
+            <div class="label-line"></div>
+        </div>
+    </div>
+
+    <div class="tutorial">SCROLL TO ZOOM • DRAG TO ROTATE</div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        // --- CONFIG ---
+        const CONFIG = {
+            colorOnline: 0x00ffff,   // Cyber Blue
+            colorOffline: 0xff0000,  // Danger Red
+            colorCore: 0xff00ff,     // AI Purple
+            particleCount: 400,
+            flowSpeed: 0.4,
+            bloomStrength: 2.5
+        };
+
+        let state = {
+            isOnline: true,
+            revenue: 0,
+            time: 0
+        };
+
+        // --- SCENE SETUP ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050505);
+        scene.fog = new THREE.FogExp2(0x050505, 0.02);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 10, 40);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+
+        // --- POST PROCESSING (GLOW) ---
+        const renderScene = new RenderPass(scene, camera);
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloomPass.threshold = 0;
+        bloomPass.strength = CONFIG.bloomStrength;
+        bloomPass.radius = 0.5;
+
+        const composer = new EffectComposer(renderer);
+        composer.addPass(renderScene);
+        composer.addPass(bloomPass);
+
+        // --- OBJECTS ---
+
+        // 1. The Bridge (Curve)
+        class CustomSinCurve extends THREE.Curve {
+            constructor(scale = 1) {
+                super();
+                this.scale = scale;
+            }
+            getPoint(t, optionalTarget = new THREE.Vector3()) {
+                const tx = (t - 0.5) * 30; // -15 to 15
+                const ty = Math.sin(t * Math.PI * 4) * 2; 
+                const tz = 0;
+                return optionalTarget.set(tx, ty, tz);
+            }
+        }
+        const path = new CustomSinCurve(10);
+        
+        const tubeGeo = new THREE.TubeGeometry(path, 64, 0.5, 8, false);
+        const tubeMat = new THREE.MeshBasicMaterial({ 
+            color: 0x113344, 
+            transparent: true, 
+            opacity: 0.1, 
+            wireframe: true 
+        });
+        const tube = new THREE.Mesh(tubeGeo, tubeMat);
+        scene.add(tube);
+
+        // 2. The Core (AI Brain) - Right Side
+        const coreGeo = new THREE.IcosahedronGeometry(3, 1);
+        const coreMat = new THREE.MeshBasicMaterial({ 
+            color: CONFIG.colorCore, 
+            wireframe: true 
+        });
+        const core = new THREE.Mesh(coreGeo, coreMat);
+        core.position.set(15, 0, 0);
+        scene.add(core);
+
+        const coreLight = new THREE.PointLight(CONFIG.colorCore, 5, 30);
+        coreLight.position.set(15, 0, 0);
+        scene.add(coreLight);
+
+        // 3. The Source (User) - Left Side
+        const sourceGeo = new THREE.SphereGeometry(1, 16, 16);
+        const sourceMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const source = new THREE.Mesh(sourceGeo, sourceMat);
+        source.position.set(-15, 0, 0);
+        scene.add(source);
+
+
+        // 4. The Disconnect Barrier
+        const barrierGeo = new THREE.RingGeometry(4, 4.5, 32);
+        const barrierMat = new THREE.MeshBasicMaterial({ 
+            color: CONFIG.colorOffline, 
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0
+        });
+        const barrier = new THREE.Mesh(barrierGeo, barrierMat);
+        barrier.position.set(0, 0, 0);
+        barrier.rotation.y = Math.PI / 2;
+        scene.add(barrier);
+
+
+        // 5. Particles System
+        const particleGeo = new THREE.BufferGeometry();
+        const posArray = new Float32Array(CONFIG.particleCount * 3);
+        const progressArray = new Float32Array(CONFIG.particleCount); 
+        const speedArray = new Float32Array(CONFIG.particleCount);
+
+        for(let i=0; i<CONFIG.particleCount; i++) {
+            progressArray[i] = Math.random(); 
+            speedArray[i] = 0.002 + Math.random() * 0.003;
+            
+            const point = path.getPoint(progressArray[i]);
+            posArray[i*3] = point.x;
+            posArray[i*3+1] = point.y + (Math.random()-0.5)*2; 
+            posArray[i*3+2] = point.z + (Math.random()-0.5)*2; 
+        }
+
+        particleGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        const particleMat = new THREE.PointsMaterial({
+            color: CONFIG.colorOnline,
+            size: 0.4,
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending
+        });
+        const particles = new THREE.Points(particleGeo, particleMat);
+        scene.add(particles);
+
+
+        // --- CONTROLS ---
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.5;
+
+        // --- ANIMATION LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const positions = particles.geometry.attributes.position.array;
+
+            // Update Particles
+            for(let i=0; i<CONFIG.particleCount; i++) {
+                
+                if (state.isOnline) {
+                    progressArray[i] += speedArray[i];
+                    if (progressArray[i] > 1) {
+                        progressArray[i] = 0; 
+                        state.revenue += 125;
+                    }
+                } else {
+                    if (progressArray[i] < 0.45) {
+                        progressArray[i] += speedArray[i];
+                    } else if (progressArray[i] > 0.55) {
+                        progressArray[i] += speedArray[i];
+                        if (progressArray[i] > 1) progressArray[i] = 10; 
+                    } else {
+                        progressArray[i] = 0.5 + (Math.random()-0.5)*0.02;
+                    }
+                }
+
+                if (progressArray[i] <= 1) {
+                    const point = path.getPoint(progressArray[i]);
+                    const time = Date.now() * 0.001;
+                    const offset = 1; 
+                    const angle = progressArray[i] * 20 + time;
+                    
+                    positions[i*3] = point.x;
+                    positions[i*3+1] = point.y + Math.cos(angle) * offset;
+                    positions[i*3+2] = point.z + Math.sin(angle) * offset;
+                } else {
+                    positions[i*3] = 9999;
+                }
+            }
+            particles.geometry.attributes.position.needsUpdate = true;
+
+            // Update Core
+            if (state.isOnline) {
+                core.rotation.x += 0.01;
+                core.rotation.y += 0.02;
+                const scale = 1 + Math.sin(Date.now() * 0.005) * 0.2;
+                core.scale.set(scale, scale, scale);
+                coreMat.wireframe = true;
+                coreMat.color.setHex(CONFIG.colorCore);
+                coreLight.intensity = 5;
+            } else {
+                core.rotation.x += 0.001;
+                core.rotation.y += 0.001;
+                core.scale.lerp(new THREE.Vector3(0.5, 0.5, 0.5), 0.05);
+                coreMat.color.setHex(0x333333); 
+                coreLight.intensity = 0.5;
+            }
+
+            // Update Barrier
+            if (!state.isOnline) {
+                barrier.material.opacity = Math.min(barrier.material.opacity + 0.05, 0.8);
+                barrier.rotation.z += 0.05;
+            } else {
+                barrier.material.opacity = Math.max(barrier.material.opacity - 0.05, 0);
+            }
+
+            updateLabels();
+            updateUI();
+
+            controls.update();
+            composer.render();
+        }
+
+        // --- LABELS LOGIC ---
+        const labelUser = document.getElementById('label-user');
+        const labelCF = document.getElementById('label-cf');
+        const labelAI = document.getElementById('label-ai');
+        const tempV = new THREE.Vector3();
+
+        function updateLabels() {
+            // 1. User Node
+            updateLabelPosition(source.position, labelUser, 0, 2.5, 0);
+            
+            // 2. Cloudflare (Middle)
+            updateLabelPosition(new THREE.Vector3(0,0,0), labelCF, 0, 3, 0);
+
+            // 3. AI Node
+            updateLabelPosition(core.position, labelAI, 0, 4, 0);
+        }
+
+        function updateLabelPosition(objPos, labelEl, offsetX, offsetY, offsetZ) {
+            tempV.copy(objPos);
+            tempV.x += offsetX;
+            tempV.y += offsetY;
+            tempV.z += offsetZ;
+
+            // Project to 2D screen space
+            tempV.project(camera);
+
+            const x = (tempV.x * .5 + .5) * window.innerWidth;
+            const y = (-(tempV.y * .5) + .5) * window.innerHeight;
+
+            // Hide if behind camera
+            if(tempV.z > 1) {
+                labelEl.style.display = 'none';
+            } else {
+                labelEl.style.display = 'block';
+                labelEl.style.left = `${x}px`;
+                labelEl.style.top = `${y}px`;
+            }
+        }
+
+        // --- UI LOGIC ---
+        function updateUI() {
+            const revEl = document.getElementById('revenue');
+            if (state.isOnline) {
+                revEl.style.color = "#00ffff";
+                revEl.innerText = "$ " + state.revenue.toLocaleString();
+            } else {
+                revEl.style.color = "#ff3333";
+                revEl.innerText = "CONNECTION LOST";
+            }
+        }
+
+        window.toggleSystem = function() {
+            state.isOnline = !state.isOnline;
+            const btn = document.getElementById('toggle-btn');
+            const statusText = document.getElementById('status-text');
+            const statusDot = document.getElementById('status-dot');
+            const latency = document.getElementById('latency');
+            const cfLabelText = labelCF.querySelector('.label-text');
+
+            if (state.isOnline) {
+                // Go Online
+                btn.innerText = "模擬拔線 (KILL SWITCH)";
+                btn.className = "";
+                
+                statusText.innerText = "SYSTEM ONLINE";
+                statusText.style.color = "#00ff00";
+                statusDot.style.background = "#00ff00";
+                statusDot.style.boxShadow = "0 0 8px #00ff00";
+                latency.innerText = "12ms";
+                latency.style.color = "#666";
+
+                particleMat.color.setHex(CONFIG.colorOnline);
+                bloomPass.strength = CONFIG.bloomStrength;
+
+                // Label Style Reset
+                labelCF.classList.remove('offline-label');
+                cfLabelText.innerText = "Cloudflare (基建)";
+                
+            } else {
+                // Go Offline
+                btn.innerText = "重啟系統 (RESTART)";
+                btn.className = "restart";
+                
+                statusText.innerText = "CRITICAL FAILURE";
+                statusText.style.color = "#ff0000";
+                statusDot.style.background = "#ff0000";
+                statusDot.style.boxShadow = "0 0 8px #ff0000";
+                latency.innerText = "TIMEOUT";
+                latency.style.color = "#ff0000";
+
+                particleMat.color.setHex(CONFIG.colorOffline);
+                bloomPass.strength = 0.5;
+
+                // Label Style Alert
+                labelCF.classList.add('offline-label');
+                cfLabelText.innerText = "⚠ 服務中斷 (FAILURE)";
+            }
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
